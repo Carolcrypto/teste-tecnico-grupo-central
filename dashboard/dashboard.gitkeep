@@ -1,1 +1,823 @@
+# ============================================================
+# O dashboard foi feito em python pois estava sem acesso ao Power BI
+# ============================================================
 
+
+from pathlib import Path
+import pandas as pd
+import streamlit as st
+import altair as alt
+import pydeck as pdk
+import numpy as np
+
+
+# ============================================================
+# CONFIGURAÇÃO DA PÁGINA
+# ============================================================
+
+st.set_page_config(
+    page_title="NutriMax | Dashboard Comercial",
+    page_icon="📊",
+    layout="wide"
+)
+
+
+# ============================================================
+# CAMINHOS DO PROJETO
+# ============================================================
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+ARQUIVO_CLIENTES = (
+    BASE_DIR / "data" / "carteirizacao_tratada.csv"
+)
+
+
+# ============================================================
+# LEITURA DOS DADOS
+# ============================================================
+
+clientes = pd.read_csv(
+    ARQUIVO_CLIENTES,
+    sep=";",
+    encoding="utf-8-sig"
+)
+
+
+# ============================================================
+# CLASSIFICAÇÃO DE CLIENTE ALTO VALOR
+# ============================================================
+
+clientes["alto_valor"] = np.where(
+    clientes["faturamento_12m"] >= clientes["faturamento_12m"].quantile(0.8),
+    "Sim",
+    "Não"
+)
+
+
+# ============================================================
+# FILTROS LATERAIS
+# ============================================================
+
+st.sidebar.title("🎛️ Filtros Comerciais")
+
+
+# Filtro Zona
+
+zonas = clientes["zona"].dropna().unique()
+
+zona_selecionada = st.sidebar.multiselect(
+    "Zona",
+    zonas,
+    default=zonas
+)
+
+
+# Filtro Tipo Profissional
+
+tipos = clientes["tipo_profissional"].dropna().unique()
+
+tipo_selecionado = st.sidebar.multiselect(
+    "Tipo Profissional",
+    tipos,
+    default=tipos
+)
+
+
+# Filtro Visita
+
+status_visita = st.sidebar.multiselect(
+    "Status de Visita",
+    ["Sim", "Não"],
+    default=["Sim", "Não"]
+)
+
+
+# Filtro Alto Valor
+
+alto_valor = st.sidebar.multiselect(
+    "Cliente Alto Valor",
+    ["Sim", "Não"],
+    default=["Sim", "Não"]
+)
+
+
+# Filtro Raio
+
+raio = st.sidebar.multiselect(
+    "Dentro do raio 25km",
+    ["Sim", "Não"],
+    default=["Sim", "Não"]
+)
+
+
+# ============================================================
+# APLICAÇÃO DOS FILTROS
+# ============================================================
+
+clientes_filtrados = clientes[
+    (clientes["zona"].isin(zona_selecionada))
+    &
+    (clientes["tipo_profissional"].isin(tipo_selecionado))
+    &
+    (clientes["ja_visitado"].isin(status_visita))
+    &
+    (clientes["alto_valor"].isin(alto_valor))
+    &
+    (clientes["dentro_raio_25km"].isin(raio))
+].copy()
+
+
+st.sidebar.success(
+    f"{len(clientes_filtrados)} clientes encontrados"
+)
+
+# ============================================================
+# TÍTULO DO DASHBOARD
+# ============================================================
+
+st.title("📊 Dashboard Comercial — NutriMax")
+
+st.write(
+    "Análise da carteira de clientes, cobertura geográfica "
+    "e estratégia de visitação comercial."
+)
+
+st.success(
+    f"Base carregada: {len(clientes_filtrados)} clientes encontrados."
+)
+
+
+# ============================================================
+# VISUALIZAÇÃO INICIAL
+# ============================================================
+
+st.subheader("Prévia da base tratada")
+
+st.dataframe(
+    clientes_filtrados.head(10),
+    use_container_width=True
+)
+# ============================================================
+# INDICADORES PRINCIPAIS — KPIs
+# ============================================================
+
+st.divider()
+
+st.subheader("Visão Geral da Carteira")
+
+# Cálculo dos indicadores
+total_clientes = clientes_filtrados["id_cliente"].nunique()
+
+faturamento_total = clientes_filtrados["faturamento_12m"].sum()
+
+clientes_dentro_raio = (
+    clientes_filtrados["dentro_raio_25km"] == "Sim"
+).sum()
+
+clientes_visitados = (
+    clientes_filtrados["ja_visitado"] == "Sim"
+).sum()
+
+clientes_alto_valor = (
+    clientes_filtrados["alto_valor"] == "Sim"
+).sum()
+
+
+ticket_medio = (
+    faturamento_total / total_clientes
+)
+
+percentual_visitados = (
+    clientes_visitados / total_clientes * 100
+)
+
+percentual_visitados = (
+    clientes_visitados / total_clientes * 100
+)
+
+
+cobertura_clientes = (
+    clientes_dentro_raio / total_clientes * 100
+)
+
+# Criação das colunas
+col1, col2, col3, col4, col5 = st.columns(5)
+
+
+with col1:
+    st.metric(
+        label="👥 Clientes na Carteira",
+        value=f"{total_clientes}"
+    )
+
+
+with col2:
+    st.metric(
+        label="💰 Faturamento 12 meses",
+        value=f"R$ {faturamento_total:,.0f}".replace(",", ".")
+    )
+
+
+with col3:
+    st.metric(
+        label="📍 Clientes no raio comercial",
+        value=f"{clientes_dentro_raio}",
+        delta=f"{cobertura_clientes:.1f}% da carteira"
+    )
+
+
+with col4:
+    st.metric(
+        label="🚗 Cobertura de visita",
+        value=f"{percentual_visitados:.1f}%",
+        delta=f"{clientes_visitados} clientes visitados"
+    )
+
+
+with col5:
+    st.metric(
+        label="⭐ Alto Valor",
+        value=f"{clientes_alto_valor}"
+    )
+
+# ============================================================
+# PERFIL DA CARTEIRA
+# ============================================================
+
+st.divider()
+
+st.subheader("Perfil da Carteira")
+
+
+clientes_tipo = (
+    clientes_filtrados
+    .groupby("tipo_profissional")
+    ["id_cliente"]
+    .count()
+    .reset_index()
+)
+
+clientes_tipo.columns = [
+    "Tipo Profissional",
+    "Quantidade"
+]
+
+
+clientes_zona = (
+    clientes_filtrados
+    .groupby("zona")
+    ["id_cliente"]
+    .count()
+    .reset_index()
+)
+
+clientes_zona.columns = [
+    "Zona",
+    "Quantidade"
+]
+
+
+col1, col2 = st.columns(2)
+
+
+with col1:
+
+    st.markdown("#### Clientes por tipo profissional")
+
+    grafico_tipo = (
+        alt.Chart(clientes_tipo)
+        .mark_bar()
+        .encode(
+            x="Tipo Profissional",
+            y="Quantidade"
+        )
+        .properties(
+            height=300
+        )
+    )
+
+    st.altair_chart(
+        grafico_tipo,
+        use_container_width=True
+    )
+
+
+with col2:
+
+    st.markdown("#### Clientes por zona")
+
+    grafico_zona = (
+        alt.Chart(clientes_zona)
+        .mark_bar()
+        .encode(
+            x="Zona",
+            y="Quantidade"
+        )
+        .properties(
+            height=300
+        )
+    )
+
+    st.altair_chart(
+        grafico_zona,
+        use_container_width=True
+    )
+
+# ============================================================
+# RANKING DE CLIENTES PRIORITÁRIOS
+# ============================================================
+
+st.divider()
+
+st.subheader("🎯 Ranking de Clientes Prioritários")
+
+
+clientes_score = clientes_filtrados.copy()
+
+
+# Normalização do faturamento
+clientes_score["score_faturamento"] = (
+    clientes_score["faturamento_12m"]
+    /
+    clientes_score["faturamento_12m"].max()
+    * 100
+)
+
+
+# Pontuação de visita
+clientes_score["score_raio"] = (
+    clientes_score["dentro_raio_25km"]
+    .apply(
+        lambda x: 30 if x == "Sim" else 0
+    )
+)
+
+
+clientes_score["score_visita"] = (
+    clientes_score["ja_visitado"]
+    .apply(
+        lambda x: 20 if x == "Não" else 0
+    )
+)
+
+
+# Score final
+
+clientes_score["score_final"] = (
+    clientes_score["score_faturamento"] * 0.5
+    +
+    clientes_score["score_raio"]
+    +
+    clientes_score["score_visita"]
+)
+
+
+# Ranking
+
+ranking = (
+    clientes_score
+    .sort_values(
+        "score_final",
+        ascending=False
+    )
+    .head(10)
+)
+
+
+st.write(
+    "Top 10 clientes com maior prioridade comercial"
+)
+
+
+st.dataframe(
+    ranking[
+        [
+            "nome_fantasia",
+            "tipo_profissional",
+            "bairro",
+            "faturamento_12m",
+            "dentro_raio_25km",
+            "ja_visitado",
+            "score_final"
+        ]
+    ],
+    use_container_width=True,
+    hide_index=True
+)
+
+# ============================================================
+# MAPA COM PRIORIDADE COMERCIAL
+# ============================================================
+
+st.divider()
+
+st.subheader("📍 Mapa Comercial da Carteira")
+
+
+mapa_clientes = clientes_filtrados[
+    [
+        "latitude",
+        "longitude",
+        "nome_fantasia",
+        "zona",
+        "faturamento_12m",
+        "dentro_raio_25km",
+        "alto_valor"
+    ]
+].copy()
+
+
+# Garantir latitude e longitude numéricos
+
+mapa_clientes["latitude"] = pd.to_numeric(
+    mapa_clientes["latitude"],
+    errors="coerce"
+)
+
+mapa_clientes["longitude"] = pd.to_numeric(
+    mapa_clientes["longitude"],
+    errors="coerce"
+)
+
+
+# Remover clientes sem coordenadas
+
+mapa_clientes = mapa_clientes.dropna(
+    subset=[
+        "latitude",
+        "longitude"
+    ]
+)
+
+
+# Criar cores dos clientes
+
+mapa_clientes["cor"] = mapa_clientes.apply(
+    lambda x:
+        [0, 200, 0]       # Verde = alto valor
+        if x["alto_valor"] == "Sim"
+        else
+        [255, 0, 0]       # Vermelho = fora do raio
+        if x["dentro_raio_25km"] == "Não"
+        else
+        [0, 100, 255],    # Azul = dentro do raio
+    axis=1
+)
+
+
+# Criar camada do mapa
+
+camada = pdk.Layer(
+    "ScatterplotLayer",
+    data=mapa_clientes,
+    get_position=[
+        "longitude",
+        "latitude"
+    ],
+    get_color="cor",
+    get_radius=120,
+    pickable=True
+)
+
+
+# Centralizar mapa
+
+vista = pdk.ViewState(
+    latitude=mapa_clientes["latitude"].mean(),
+    longitude=mapa_clientes["longitude"].mean(),
+    zoom=10
+)
+
+
+# Legenda
+
+st.markdown(
+    """
+    **Legenda:**
+
+    🟢 Cliente alto valor  
+    🔵 Cliente dentro do raio de 25 km  
+    🔴 Cliente fora do raio de 25 km  
+    """
+)
+
+
+# Exibir mapa (somente uma vez)
+
+st.pydeck_chart(
+    pdk.Deck(
+        layers=[camada],
+        initial_view_state=vista,
+        tooltip={
+            "text":
+            "{nome_fantasia}\nFaturamento: R$ {faturamento_12m}"
+        }
+    )
+)
+# ============================================================
+# OPORTUNIDADES COMERCIAIS
+# ============================================================
+
+st.divider()
+
+st.subheader("🚀 Oportunidades Comerciais")
+
+
+oportunidades = clientes_filtrados[
+    (clientes_filtrados["dentro_raio_25km"] == "Sim")
+    &
+    (clientes_filtrados["ja_visitado"] == "Não")
+].copy()
+
+
+# Criar classificação de prioridade
+
+oportunidades["prioridade"] = oportunidades.apply(
+    lambda x:
+    "Alta"
+    if x["alto_valor"] == "Sim"
+    else "Média",
+    axis=1
+)
+
+
+# Ordenar por faturamento
+
+
+oportunidades = (
+    oportunidades
+    .sort_values(
+        "faturamento_12m",
+        ascending=False
+    )
+    .head(10)
+)
+
+
+st.write(
+    "Clientes próximos da operação que ainda não receberam visita comercial."
+)
+
+
+st.dataframe(
+    oportunidades[
+        [
+            "nome_fantasia",
+            "tipo_profissional",
+            "bairro",
+            "zona",
+            "faturamento_12m",
+            "alto_valor",
+            "prioridade"
+        ]
+    ],
+    use_container_width=True,
+    hide_index=True
+)
+st.divider()
+
+st.subheader("📈 Cobertura Comercial")
+
+
+cobertura = (
+    clientes_filtrados
+    .groupby("ja_visitado")
+    ["id_cliente"]
+    .count()
+    .reset_index()
+)
+
+
+cobertura.columns = [
+    "Status Visita",
+    "Quantidade"
+]
+
+
+grafico_cobertura = (
+    alt.Chart(cobertura)
+    .mark_bar()
+    .encode(
+        x="Status Visita",
+        y="Quantidade"
+    )
+)
+
+
+st.altair_chart(
+    grafico_cobertura,
+    use_container_width=True
+)
+# ============================================================
+# CÁLCULO DE DISTÂNCIA DA BASE
+# ============================================================
+
+LAT_BASE = -23.5875
+LON_BASE = -46.6396
+
+
+def calcular_distancia(lat1, lon1, lat2, lon2):
+
+    raio_terra = 6371
+
+    lat1 = np.radians(lat1)
+    lat2 = np.radians(lat2)
+
+    delta_lat = np.radians(lat2 - lat1)
+    delta_lon = np.radians(lon2 - lon1)
+
+    a = (
+        np.sin(delta_lat/2)**2
+        +
+        np.cos(lat1)
+        *
+        np.cos(lat2)
+        *
+        np.sin(delta_lon/2)**2
+    )
+
+    distancia = (
+        2
+        *
+        np.arcsin(np.sqrt(a))
+        *
+        raio_terra
+    )
+
+    return distancia
+    # ============================================================
+# ROTA COMERCIAL SUGERIDA
+# ============================================================
+
+st.divider()
+
+st.subheader("🚗 Rota Comercial Sugerida")
+
+
+rota = clientes_filtrados[
+    (clientes_filtrados["dentro_raio_25km"] == "Sim")
+    &
+    (clientes_filtrados["ja_visitado"] == "Não")
+].copy()
+
+
+rota["distancia_km"] = rota.apply(
+    lambda x:
+    calcular_distancia(
+        LAT_BASE,
+        LON_BASE,
+        x["latitude"],
+        x["longitude"]
+    ),
+    axis=1
+)
+
+
+rota["prioridade"] = rota.apply(
+    lambda x:
+    "Alta"
+    if x["alto_valor"] == "Sim"
+    else "Normal",
+    axis=1
+)
+
+
+rota = (
+    rota
+    .sort_values(
+        [
+            "prioridade",
+            "distancia_km"
+        ],
+        ascending=[
+            True,
+            True
+        ]
+    )
+    .head(15)
+)
+
+
+st.write(
+    "Sugestão de clientes para visita considerando proximidade e potencial."
+)
+
+
+st.dataframe(
+    rota[
+        [
+            "nome_fantasia",
+            "bairro",
+            "distancia_km",
+            "faturamento_12m",
+            "prioridade"
+        ]
+    ],
+    use_container_width=True,
+    hide_index=True
+)
+# ============================================================
+# MAPA DA ROTA COMERCIAL
+# ============================================================
+
+st.divider()
+
+st.subheader("🗺️ Mapa da Rota Comercial")
+
+
+mapa_rota = rota[
+    [
+        "latitude",
+        "longitude",
+        "nome_fantasia",
+        "bairro",
+        "distancia_km",
+        "prioridade",
+        "faturamento_12m"
+    ]
+].copy()
+
+
+# Garantir coordenadas numéricas
+
+mapa_rota["latitude"] = pd.to_numeric(
+    mapa_rota["latitude"],
+    errors="coerce"
+)
+
+mapa_rota["longitude"] = pd.to_numeric(
+    mapa_rota["longitude"],
+    errors="coerce"
+)
+
+
+mapa_rota = mapa_rota.dropna(
+    subset=[
+        "latitude",
+        "longitude"
+    ]
+)
+
+
+# Ordem da visita
+
+mapa_rota["ordem_visita"] = range(
+    1,
+    len(mapa_rota) + 1
+)
+
+
+# Criar cor da prioridade
+
+mapa_rota["cor"] = mapa_rota["prioridade"].apply(
+    lambda x:
+    [0, 200, 0]
+    if x == "Alta"
+    else
+    [0, 100, 255]
+)
+
+
+camada_rota = pdk.Layer(
+    "ScatterplotLayer",
+    data=mapa_rota,
+    get_position=[
+        "longitude",
+        "latitude"
+    ],
+    get_color="cor",
+    get_radius=180,
+    pickable=True
+)
+
+
+vista_rota = pdk.ViewState(
+    latitude=mapa_rota["latitude"].mean(),
+    longitude=mapa_rota["longitude"].mean(),
+    zoom=11
+)
+
+
+st.markdown(
+    """
+    **Legenda:**
+
+    🟢 Cliente prioridade alta  
+    🔵 Cliente prioridade normal  
+    """
+)
+
+
+st.pydeck_chart(
+    pdk.Deck(
+        layers=[camada_rota],
+        initial_view_state=vista_rota,
+        tooltip={
+            "text":
+            "Visita {ordem_visita}\n"
+            "{nome_fantasia}\n"
+            "Distância: {distancia_km} km"
+        }
+    )
+)
