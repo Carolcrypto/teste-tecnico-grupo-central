@@ -1,1 +1,12 @@
+# Documentação do Teste Técnico
+
+Esta pasta contém o documento original em PDF com as instruções, requisitos e critérios do teste técnico utilizado como base para o desenvolvimento deste projeto.
+
+O arquivo foi mantido no repositório como referência para facilitar a compreensão do desafio proposto e permitir a comparação entre os requisitos solicitados e a solução desenvolvida.
+
+## Conteúdo
+
+* **PDF do Teste Técnico** — Documento original contendo o contexto do desafio, requisitos, análises solicitadas e orientações para a entrega.
+
+A solução desenvolvida a partir dessas especificações pode ser consultada nas demais pastas do repositório, incluindo os scripts de análise de dados, a base tratada, o dashboard interativo e as imagens demonstrativas da aplicação.
 
